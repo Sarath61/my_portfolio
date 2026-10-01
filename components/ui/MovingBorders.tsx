@@ -1,22 +1,30 @@
-"use client";
 import React from "react";
-import {
-  motion,
-  useAnimationFrame,
-  useMotionTemplate,
-  useMotionValue,
-  useTransform,
-} from "framer-motion";
-import { useRef } from "react";
 import { cn } from "@/utils/cn";
 
+/**
+ * Card with a glowing border highlight.
+ *
+ * The previous `MovingBorder` ran a framer-motion `useAnimationFrame` loop per
+ * card that called `pathRef.current.getTotalLength()` once and
+ * `getPointAtLength(val)` twice on every frame, then fed the result through
+ * `useMotionTemplate` into an inline transform. With four cards mounted that is
+ * ~720 forced SVG geometry measurements per second on the main thread, every one
+ * of which can trigger layout. The card body also carried `backdrop-blur-xl`, so
+ * each frame of that movement forced a 24px backdrop blur to re-sample.
+ *
+ * The same "light travelling the edge" look is now a single conic gradient
+ * rotating behind an inset opaque panel. One compositor-driven `rotate` per
+ * card, no JS, no geometry queries, no backdrop filter.
+ *
+ * `duration` is kept and now maps straight onto `animation-duration`.
+ */
 export function Button({
   borderRadius = "1.75rem",
   children,
   as: Component = "button",
   containerClassName,
   borderClassName,
-  duration,
+  duration = 4000,
   className,
   ...otherProps
 }: {
@@ -32,31 +40,17 @@ export function Button({
   return (
     <Component
       className={cn(
-        "bg-transparent relative text-xl   p-[1px] overflow-hidden md:col-span-2",
+        "relative overflow-hidden bg-transparent p-[1px] text-xl md:col-span-2",
         containerClassName
       )}
-      style={{
-        borderRadius: borderRadius,
-      }}
+      style={{ borderRadius }}
       {...otherProps}
     >
-      <div
-        className="absolute inset-0"
-        style={{ borderRadius: `calc(${borderRadius} * 0.96)` }}
-      >
-        <MovingBorder duration={duration} rx="30%" ry="30%">
-          <div
-            className={cn(
-              "h-20 w-20 opacity-[0.8] bg-[radial-gradient(var(--sky-500)_40%,transparent_60%)]",
-              borderClassName
-            )}
-          />
-        </MovingBorder>
-      </div>
+      <MovingBorder duration={duration} borderClassName={borderClassName} />
 
       <div
         className={cn(
-          "relative bg-slate-900/[0.8] border border-slate-800 backdrop-blur-xl text-white flex items-center justify-center w-full h-full text-sm antialiased",
+          "relative flex h-full w-full items-center justify-center border border-slate-800 bg-slate-900 text-sm text-white antialiased",
           className
         )}
         style={{
@@ -69,71 +63,31 @@ export function Button({
   );
 }
 
+/**
+ * The rotating highlight itself. Kept as a named export for compatibility; it
+ * no longer takes `children` / `rx` / `ry` because there is no SVG path to walk.
+ */
 export const MovingBorder = ({
-  children,
-  duration = 2000,
-  rx,
-  ry,
-  ...otherProps
+  duration = 4000,
+  borderClassName,
 }: {
-  children: React.ReactNode;
   duration?: number;
-  rx?: string;
-  ry?: string;
-  [key: string]: any;
+  borderClassName?: string;
 }) => {
-  const pathRef = useRef<any>();
-  const progress = useMotionValue<number>(0);
-
-  useAnimationFrame((time) => {
-    const length = pathRef.current?.getTotalLength();
-    if (length) {
-      const pxPerMillisecond = length / duration;
-      progress.set((time * pxPerMillisecond) % length);
-    }
-  });
-
-  const x = useTransform(
-    progress,
-    (val) => pathRef.current?.getPointAtLength(val).x
-  );
-  const y = useTransform(
-    progress,
-    (val) => pathRef.current?.getPointAtLength(val).y
-  );
-
-  const transform = useMotionTemplate`translateX(${x}px) translateY(${y}px) translateX(-50%) translateY(-50%)`;
-
   return (
-    <>
-      <svg
-        xmlns="http://www.w3.org/2000/svg"
-        preserveAspectRatio="none"
-        className="absolute h-full w-full"
-        width="100%"
-        height="100%"
-        {...otherProps}
-      >
-        <rect
-          fill="none"
-          width="100%"
-          height="100%"
-          rx={rx}
-          ry={ry}
-          ref={pathRef}
-        />
-      </svg>
-      <motion.div
-        style={{
-          position: "absolute",
-          top: 0,
-          left: 0,
-          display: "inline-block",
-          transform,
-        }}
-      >
-        {children}
-      </motion.div>
-    </>
+    <span
+      aria-hidden="true"
+      className="absolute inset-0 overflow-hidden rounded-[inherit]"
+    >
+      {/* aspect-square at 140% width guarantees the rotating gradient always
+          covers the card's diagonal, with no oversized `inset-[-1000%]` layer. */}
+      <span
+        className={cn(
+          "absolute left-1/2 top-1/2 aspect-square w-[140%] -translate-x-1/2 -translate-y-1/2 animate-spin bg-[conic-gradient(from_0deg,transparent_0%,transparent_55%,#0ea5e9_75%,#38bdf8_85%,transparent_100%)] opacity-80 [will-change:transform]",
+          borderClassName
+        )}
+        style={{ animationDuration: `${duration}ms` }}
+      />
+    </span>
   );
 };

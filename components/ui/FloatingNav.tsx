@@ -1,14 +1,22 @@
 "use client";
-import React, { useState } from "react";
-import {
-  motion,
-  AnimatePresence,
-  useScroll,
-  useMotionValueEvent,
-} from "framer-motion";
+import React, { useEffect, useRef, useState } from "react";
 import { cn } from "@/utils/cn";
 import Link from "next/link";
 
+/**
+ * Scroll-reactive floating navigation.
+ *
+ * The previous version drove this with framer-motion's `useScroll` +
+ * `useMotionValueEvent`, which keeps a per-frame subscription alive for the
+ * lifetime of the page and called `setVisible` from inside it. Combined with
+ * `AnimatePresence mode="wait"` wrapping a child that never unmounts, every
+ * direction change triggered a React render of a fixed, backdrop-filtered
+ * element - the most expensive kind of element to invalidate while scrolling.
+ *
+ * Now: one passive scroll listener, coalesced into a single rAF tick, writing to
+ * state only when the boolean actually flips. The show/hide itself is a CSS
+ * transition on `transform` + `opacity`, so the compositor handles it.
+ */
 export const FloatingNav = ({
   navItems,
   className,
@@ -20,65 +28,63 @@ export const FloatingNav = ({
   }[];
   className?: string;
 }) => {
-  const { scrollYProgress } = useScroll();
-
   const [visible, setVisible] = useState(true);
+  const lastY = useRef(0);
+  const ticking = useRef(false);
 
-  useMotionValueEvent(scrollYProgress, "change", (current) => {
-    // Check if current is not undefined and is a number
-    if (typeof current === "number") {
-      let direction = current! - scrollYProgress.getPrevious()!;
+  useEffect(() => {
+    lastY.current = window.scrollY;
 
-      if (scrollYProgress.get() < 0.05) {
-        setVisible(true);
-      } else {
-        if (direction < 0) {
-          setVisible(true);
-        } else {
-          setVisible(false);
-        }
-      }
-    }
-  });
+    const update = () => {
+      ticking.current = false;
+      const y = window.scrollY;
+      const max = document.documentElement.scrollHeight - window.innerHeight;
+      const progress = max > 0 ? y / max : 0;
+      const next = progress < 0.05 ? true : y < lastY.current;
+
+      lastY.current = y;
+      // Only re-render on an actual change of state.
+      setVisible((prev) => (prev === next ? prev : next));
+    };
+
+    const onScroll = () => {
+      if (ticking.current) return;
+      ticking.current = true;
+      requestAnimationFrame(update);
+    };
+
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return () => window.removeEventListener("scroll", onScroll);
+  }, []);
 
   return (
-    <AnimatePresence mode="wait">
-      <motion.div
-        initial={{
-          opacity: 1,
-          y: -100,
-        }}
-        animate={{
-          y: visible ? 0 : -100,
-          opacity: visible ? 1 : 0,
-        }}
-        transition={{
-          duration: 0.2,
-        }}
-        className={cn(
-          "flex max-w-fit md:min-w-[70vw] lg:min-w-fit fixed z-[5000] top-10 inset-x-0 mx-auto px-10 py-5 rounded-full border border-black/.1 shadow-[0px_2px_3px_-1px_rgba(0,0,0,0.1),0px_1px_0px_0px_rgba(25,28,33,0.02),0px_0px_0px_1px_rgba(25,28,33,0.08)] items-center justify-center space-x-4",
-          className
-        )}
-        style={{
-          backdropFilter: "blur(16px) saturate(180%)",
-          backgroundColor: "rgba(17, 25, 40, 0.75)",
-          borderRadius: "50px",
-          border: "1px solid rgba(255, 255, 255, 0.125)",
-        }}
-      >
-        {navItems.map((navItem: any, idx: number) => (
-          <Link
-            key={`link=${idx}`}
-            href={navItem.link}
-            className={cn(
-              "relative dark:text-neutral-50 items-center flex space-x-1 text-neutral-600 dark:hover:text-neutral-300 hover:text-neutral-500"
-            )}
-          >
-            <span className="block sm:hidden">{navItem.icon}</span>
-            <span className=" text-sm !cursor-pointer">{navItem.name}</span>
-          </Link>
-        ))}
-      </motion.div>
-    </AnimatePresence>
+    <nav
+      className={cn(
+        "fixed inset-x-0 top-10 z-[5000] mx-auto flex max-w-fit items-center justify-center space-x-4 px-10 py-5 transition-[transform,opacity] duration-200 ease-out md:min-w-[70vw] lg:min-w-fit",
+        visible
+          ? "translate-y-0 opacity-100"
+          : "-translate-y-[120%] opacity-0",
+        className
+      )}
+      style={{
+        // Single filter function instead of blur + saturate. Each added function
+        // is another full-surface pass on every scroll frame.
+        backdropFilter: "blur(12px)",
+        backgroundColor: "rgba(17, 25, 40, 0.75)",
+        borderRadius: "50px",
+        border: "1px solid rgba(255, 255, 255, 0.125)",
+      }}
+    >
+      {navItems.map((navItem, idx) => (
+        <Link
+          key={`link=${idx}`}
+          href={navItem.link}
+          className="relative flex items-center space-x-1 text-neutral-600 transition-colors hover:text-neutral-500 dark:text-neutral-50 dark:hover:text-neutral-300"
+        >
+          <span className="block sm:hidden">{navItem.icon}</span>
+          <span className="cursor-pointer text-sm">{navItem.name}</span>
+        </Link>
+      ))}
+    </nav>
   );
 };

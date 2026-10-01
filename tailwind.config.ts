@@ -90,15 +90,23 @@ const config = {
           from: { height: "var(--radix-accordion-content-height)" },
           to: { height: "0" },
         },
+        // Compositor-only: opacity + transform. No filters, no layout props.
         spotlight: {
           "0%": {
             opacity: "0",
-            transform: "translate(-72%, -62%) scale(0.5)",
+            transform: "translate3d(-72%, -62%, 0) scale(0.6)",
           },
           "100%": {
             opacity: "1",
-            transform: "translate(-50%,-40%) scale(1)",
+            transform: "translate3d(-50%, -40%, 0) scale(1)",
           },
+        },
+        // Hover-only ripple for the project pins (replaces 12 infinite JS loops).
+        ripple: {
+          "0%": { opacity: "0", transform: "translate3d(-50%, -50%, 0) scale(0)" },
+          "35%": { opacity: "1" },
+          "70%": { opacity: "0.45" },
+          "100%": { opacity: "0", transform: "translate3d(-50%, -50%, 0) scale(1)" },
         },
         shimmer: {
           from: {
@@ -110,13 +118,13 @@ const config = {
         },
         moveHorizontal: {
           "0%": {
-            transform: "translateX(-50%) translateY(-10%)",
+            transform: "translate3d(-50%, -10%, 0)",
           },
           "50%": {
-            transform: "translateX(50%) translateY(10%)",
+            transform: "translate3d(50%, 10%, 0)",
           },
           "100%": {
-            transform: "translateX(-50%) translateY(-10%)",
+            transform: "translate3d(-50%, -10%, 0)",
           },
         },
         moveInCircle: {
@@ -132,31 +140,34 @@ const config = {
         },
         moveVertical: {
           "0%": {
-            transform: "translateY(-50%)",
+            transform: "translate3d(0, -50%, 0)",
           },
           "50%": {
-            transform: "translateY(50%)",
+            transform: "translate3d(0, 50%, 0)",
           },
           "100%": {
-            transform: "translateY(-50%)",
+            transform: "translate3d(0, -50%, 0)",
           },
         },
         scroll: {
           to: {
-            transform: "translate(calc(-50% - 0.5rem))",
+            transform: "translate3d(calc(-50% - 0.5rem), 0, 0)",
           },
         },
       },
       animation: {
         "accordion-down": "accordion-down 0.2s ease-out",
         "accordion-up": "accordion-up 0.2s ease-out",
-        spotlight: "spotlight 2s ease .75s 1 forwards",
+        // Was 2s with a 0.75s delay, which kept a blurred layer alive across the
+        // whole LCP window. Now short and front-loaded.
+        spotlight: "spotlight 1.1s cubic-bezier(0.22, 1, 0.36, 1) 0.05s 1 forwards",
+        ripple: "ripple 4s linear infinite",
         shimmer: "shimmer 2s linear infinite",
-        first: "moveVertical 30s ease infinite",
-        second: "moveInCircle 20s reverse infinite",
+        first: "moveVertical 30s ease-in-out infinite",
+        second: "moveInCircle 26s linear reverse infinite",
         third: "moveInCircle 40s linear infinite",
-        fourth: "moveHorizontal 40s ease infinite",
-        fifth: "moveInCircle 20s ease infinite",
+        fourth: "moveHorizontal 40s ease-in-out infinite",
+        fifth: "moveInCircle 20s linear infinite",
         scroll:
           "scroll var(--animation-duration, 40s) var(--animation-direction, forwards) linear infinite",
       },

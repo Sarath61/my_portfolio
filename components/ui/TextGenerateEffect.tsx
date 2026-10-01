@@ -1,8 +1,23 @@
-"use client";
-import { useEffect } from "react";
-import { motion, stagger, useAnimate } from "framer-motion";
+import React from "react";
 import { cn } from "@/utils/cn";
 
+/**
+ * Staggered word entrance for the hero headline.
+ *
+ * The previous implementation used framer-motion's `useAnimate` to animate
+ * `filter: blur(10px) -> blur(0px)` on every word with `stagger(0.2)`. Two
+ * problems:
+ *
+ *   1. `filter` is not a compositable property, so each of the seven words
+ *      forced a text re-rasterization on every frame.
+ *   2. The words start at `opacity-0` and the stagger ran ~1.4s, which means the
+ *      page's LCP element was invisible for over a second after paint.
+ *
+ * This version is plain CSS: `opacity` + `translate3d`, a 40ms stagger via a
+ * `--i` custom property, and the whole headline is legible in ~0.6s. There is no
+ * client-side JS and no `useEffect`, so the component is a server component
+ * again and framer-motion leaves the hero's critical path entirely.
+ */
 export const TextGenerateEffect = ({
   words,
   className,
@@ -11,53 +26,36 @@ export const TextGenerateEffect = ({
 }: {
   words: string;
   className?: string;
+  /** When false, the headline paints immediately with no entrance animation. */
   filter?: boolean;
   duration?: number;
 }) => {
-  const [scope, animate] = useAnimate();
-  let wordsArray = words.split(" ");
-  useEffect(() => {
-    animate(
-      "span",
-      {
-        opacity: 1,
-        filter: filter ? "blur(0px)" : "none",
-      },
-      {
-        duration: duration ? duration : 1,
-        delay: stagger(0.2),
-      }
-    );
-  }, [scope.current]);
-
-  const renderWords = () => {
-    return (
-      <motion.div ref={scope}>
-        {wordsArray.map((word, idx) => {
-          return (
-            <motion.span
-              key={word + idx}
-              className={`${
-                idx > 3 ? "text-purple" : "dark:text-white text-black"
-              } opacity-0`}
-              style={{
-                filter: filter ? "blur(10px)" : "none",
-              }}
-            >
-              {word}{" "}
-            </motion.span>
-          );
-        })}
-      </motion.div>
-    );
-  };
+  const wordsArray = words.split(" ");
 
   return (
     <div className={cn("font-bold", className)}>
       <div className="my-4">
-        <div className=" dark:text-white text-black  leading-snug tracking-wide">
-          {renderWords()}
-        </div>
+        <h1 className="leading-snug tracking-wide text-black dark:text-white">
+          {wordsArray.map((word, idx) => (
+            <span
+              key={word + idx}
+              className={cn(
+                idx > 3 ? "text-purple" : "text-black dark:text-white",
+                filter && "anim-rise"
+              )}
+              style={
+                filter
+                  ? ({
+                      ["--i" as string]: idx,
+                      animationDuration: `${duration}s`,
+                    } as React.CSSProperties)
+                  : undefined
+              }
+            >
+              {word}{" "}
+            </span>
+          ))}
+        </h1>
       </div>
     </div>
   );

@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Color, Scene, Fog, PerspectiveCamera, Vector3 } from "three";
 import ThreeGlobe from "three-globe";
 import { useThree, Object3DNode, Canvas, extend } from "@react-three/fiber";
@@ -152,7 +152,11 @@ export function Globe({ globeConfig, data }: WorldProps) {
     if (globeRef.current && globeData) {
       globeRef.current
         .hexPolygonsData(countries.features)
-        .hexPolygonResolution(3)
+        // Resolution 3 builds roughly four times as many hex polygons as 2,
+        // for a globe that is only ~380px tall on screen. The difference is not
+        // visible at this size but it is thousands of extra meshes to build,
+        // upload and light.
+        .hexPolygonResolution(2)
         .hexPolygonMargin(0.7)
         .showAtmosphere(defaultProps.showAtmosphere)
         .atmosphereColor(defaultProps.atmosphereColor)
@@ -207,6 +211,8 @@ export function Globe({ globeConfig, data }: WorldProps) {
 
     const interval = setInterval(() => {
       if (!globeRef.current || !globeData) return;
+      // Skip the work entirely when the tab is hidden.
+      if (typeof document !== "undefined" && document.hidden) return;
       numbersOfRings = genRandomNumbers(
         0,
         data.length,
@@ -234,20 +240,35 @@ export function WebGLRendererConfig() {
   const { gl, size } = useThree();
 
   useEffect(() => {
-    gl.setPixelRatio(window.devicePixelRatio);
+    // `window.devicePixelRatio` is 2-3 on most laptops and phones, which means
+    // 4-9x the fragment shading work for a decorative globe. Clamping to 1.5 is
+    // indistinguishable here and is the single biggest GPU saving in this file.
+    gl.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
     gl.setSize(size.width, size.height);
     gl.setClearColor(0xffaaff, 0);
-  }, []);
+  }, [gl, size.width, size.height]);
 
   return null;
 }
 
 export function World(props: WorldProps) {
   const { globeConfig } = props;
-  const scene = new Scene();
-  scene.fog = new Fog(0xffffff, 400, 2000);
+
+  // These were constructed inline in the render body, so every render of World
+  // built a brand new Scene and PerspectiveCamera and handed them to <Canvas>,
+  // tearing down and rebuilding the renderer's view of the world.
+  const scene = useMemo(() => {
+    const s = new Scene();
+    s.fog = new Fog(0xffffff, 400, 2000);
+    return s;
+  }, []);
+  const camera = useMemo(
+    () => new PerspectiveCamera(50, aspect, 180, 1800),
+    []
+  );
+
   return (
-    <Canvas scene={scene} camera={new PerspectiveCamera(50, aspect, 180, 1800)}>
+    <Canvas scene={scene} camera={camera} dpr={[1, 1.5]}>
       <WebGLRendererConfig />
       <ambientLight color={globeConfig.ambientLight} intensity={0.6} />
       <directionalLight

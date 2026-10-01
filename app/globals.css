@@ -67,14 +67,35 @@
 }
 
 @layer base {
-  * {
-    @apply border-border !scroll-smooth;
+  /* Default border colour only. The previous `* { @apply border-border
+     !scroll-smooth }` forced smooth scrolling on every element in the tree with
+     !important, which fought the scroll-driven nav and made anchor jumps animate
+     the whole document. Scope it to the root instead. */
+  *,
+  ::before,
+  ::after {
+    border-color: hsl(var(--border));
   }
+
+  html {
+    scroll-behavior: smooth;
+  }
+
   body {
     @apply bg-background text-foreground;
+    /* Opaque page background so blurred/blended layers never have to sample
+       through to a transparent root. */
+    background-color: #000319;
   }
+
   button {
     @apply active:outline-none;
+  }
+
+  img,
+  svg {
+    /* Stops decoded images from contributing to CLS before dimensions land. */
+    display: block;
   }
 }
 
@@ -85,5 +106,85 @@
 
   .black-gradient {
     background: linear-gradient(90deg, #161a31 0%, #06091f 100%);
+  }
+
+  /* --- Shared entrance primitive -------------------------------------------
+     Animates opacity + translate3d only, so it stays on the compositor. Stagger
+     by setting `--i` on the element (index), no JS timers required. */
+  .anim-rise {
+    opacity: 0;
+    animation: rise 0.45s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+    animation-delay: calc(var(--i, 0) * 40ms);
+  }
+
+  /* --- Soft glow ------------------------------------------------------------
+     Replaces the Spotlight SVG that used feGaussianBlur stdDeviation="151" over
+     a 3787x2842 viewBox. A radial gradient is already soft, so it needs no
+     filter pass at all and costs one cheap paint. */
+  .glow-soft {
+    background-image: radial-gradient(
+      closest-side,
+      var(--glow-color, #ffffff) 0%,
+      color-mix(in srgb, var(--glow-color, #ffffff) 45%, transparent) 38%,
+      transparent 72%
+    );
+  }
+
+  /* Decorative gradient wash that stands in for the 2.7 MB b1.svg raster. */
+  .bento-wash {
+    background-image: radial-gradient(
+        120% 90% at 85% 10%,
+        rgba(118, 74, 188, 0.4) 0%,
+        transparent 60%
+      ),
+      radial-gradient(
+        100% 80% at 10% 100%,
+        rgba(40, 78, 189, 0.32) 0%,
+        transparent 62%
+      ),
+      linear-gradient(135deg, #04071d 0%, #0c0e23 100%);
+  }
+}
+
+/* Declared here rather than in tailwind.config.ts on purpose: Tailwind only
+   emits a `@keyframes` block when some generated `animate-*` utility references
+   it. `.anim-rise` is hand-written CSS, so relying on the config would have left
+   the keyframes stripped from the build and every `.anim-rise` element stuck at
+   `opacity: 0`. */
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 10px, 0);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+/* Honour the OS "reduce motion" setting: kills every infinite loop and
+   entrance animation in one place, including the Tailwind-generated ones. */
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+
+  *,
+  ::before,
+  ::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+
+  .anim-rise {
+    opacity: 1;
+    animation: none;
+  }
+
+  /* The blanket rule above would collapse the marquee to its end keyframe,
+     leaving the testimonial strip visibly offset. Stop it at the start instead. */
+  .animate-scroll {
+    animation: none !important;
   }
 }
